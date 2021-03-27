@@ -3,3 +3,12 @@
 [[package]]
 name = "dex_tool"
 version = "0.1.0"
+dependencies = [
+ "leb128",
+]
+
+[[package]]
+name = "leb128"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3576a87f2ba00f6f106fdfcd16db1d698d648a26ad8e0573cad8537c3c362d2a"

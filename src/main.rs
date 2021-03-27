@@ -1,5 +1,6 @@
 use std::fs::{File};
-use std::io::{BufReader, Read};
+use std::io::{BufReader, Read, Seek};
+use std::io::SeekFrom::{Start};
 
 // Bytes [4..7] specify Dex Format Version
 // In string format: "dex\n035\0" with 035 being the Dex Format Version
@@ -20,17 +21,19 @@ fn main() {
     let f = File::open("mx_files/classes.dex").expect("Could not open file");
     let mut reader = BufReader::new(f);
 
-
     let dex_header = DexHeader::from_reader(&mut reader);
-    let version = DexHeader::verify_magic(&dex_header.magic);
 
+    let version = DexHeader::verify_magic(&dex_header.magic);
     assert!(SUPPORTED_DEX_VERSIONS.contains(&version),
             "Unsupported Dex Format Version ({})", version);
 
     let is_reverse_endian = DexHeader::verify_endian(dex_header.endian_tag);
+    assert!(!is_reverse_endian, "Dex Files with reverse endian tag are not supported");
 
-    println!("File Format Version: {} - Reversed Endian: {}", version, is_reverse_endian);
+    println!("File Format Version: {}", version);
     println!("{:#?}", dex_header);
+
+    parse_strings(dex_header, &mut reader);
 }
 
 fn read_u32(reader: &mut BufReader<File>) -> u32 {
@@ -38,6 +41,28 @@ fn read_u32(reader: &mut BufReader<File>) -> u32 {
     reader.read(&mut buf).unwrap();
     u32::from_le_bytes(buf)
 }
+
+fn parse_strings(dex_header: DexHeader, reader: &mut BufReader<File>) {
+    println!("String Ids Size {} - Offset: {}", dex_header.string_ids_size, dex_header.string_ids_off);
+
+    let mut string_ids = Vec::new();
+
+    for _ in 0..dex_header.string_ids_size {
+        string_ids.push(read_u32(reader));
+    }
+
+    // TODO https://github.com/rust-lang/rust/issues/31100
+    // Switch to relative seeking for BufReader
+    for string_data_off in string_ids {
+        reader.seek(Start(string_data_off.into())).unwrap();
+
+        let size = leb128::read::unsigned(reader).unwrap();
+        let mut v = vec![0u8; size as usize];
+        reader.read_exact(&mut v).unwrap();
+        let string = String::from_utf8(v).unwrap_or(String::new());
+    }
+}
+
 
 #[derive(Debug)]
 struct DexHeader {
@@ -63,7 +88,7 @@ struct DexHeader {
     class_defs_size: u32,
     class_defs_off: u32,
     data_size: u32,
-    data_off: u32
+    data_off: u32,
 }
 
 impl DexHeader {
@@ -118,7 +143,7 @@ impl DexHeader {
             class_defs_size: read_u32(reader),
             class_defs_off: read_u32(reader),
             data_size: read_u32(reader),
-            data_off: read_u32(reader)
+            data_off: read_u32(reader),
         };
 
         DexHeader::verify_endian(header.endian_tag);
