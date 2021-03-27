@@ -33,7 +33,9 @@ fn main() {
     println!("File Format Version: {}", version);
     println!("{:#?}", dex_header);
 
-    parse_strings(dex_header, &mut reader);
+    let strings = parse_strings(&dex_header, &mut reader);
+    let type_ids = parse_types(&dex_header, &mut reader);
+    let proto_ids = parse_protos(&dex_header, &mut reader);
 }
 
 fn read_u32(reader: &mut BufReader<File>) -> u32 {
@@ -42,25 +44,64 @@ fn read_u32(reader: &mut BufReader<File>) -> u32 {
     u32::from_le_bytes(buf)
 }
 
-fn parse_strings(dex_header: DexHeader, reader: &mut BufReader<File>) {
-    println!("String Ids Size {} - Offset: {}", dex_header.string_ids_size, dex_header.string_ids_off);
+fn parse_strings(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Vec<String> {
+    reader.seek(Start(dex_header.string_ids_off.into())).unwrap();
 
-    let mut string_ids = Vec::new();
-
+    let mut string_ids = Vec::with_capacity(dex_header.string_ids_size as usize);
     for _ in 0..dex_header.string_ids_size {
         string_ids.push(read_u32(reader));
     }
 
+    let mut strings = Vec::with_capacity(dex_header.string_ids_size as usize);
+
     // TODO https://github.com/rust-lang/rust/issues/31100
     // Switch to relative seeking for BufReader
     for string_data_off in string_ids {
+        debug_assert!({
+                          let data_end = dex_header.data_off + dex_header.data_size;
+                          dex_header.data_off < string_data_off && string_data_off < data_end
+                      }, "Offset location was not in data section");
         reader.seek(Start(string_data_off.into())).unwrap();
 
         let size = leb128::read::unsigned(reader).unwrap();
         let mut v = vec![0u8; size as usize];
         reader.read_exact(&mut v).unwrap();
         let string = String::from_utf8(v).unwrap_or(String::new());
+        strings.push(string);
     }
+
+    strings
+}
+
+fn parse_types(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Vec<u32> {
+    reader.seek(Start(dex_header.type_ids_off.into())).unwrap();
+
+    let mut type_ids: Vec<u32> = Vec::with_capacity(dex_header.type_ids_size as usize);
+    for _ in 0..dex_header.type_ids_size {
+        type_ids.push(read_u32(reader));
+    }
+    type_ids
+}
+
+fn parse_protos(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Vec<ProtoIdItem> {
+    reader.seek(Start(dex_header.proto_ids_off.into())).unwrap();
+
+    let mut v = Vec::with_capacity(dex_header.proto_ids_size as usize);
+    for _ in 0..dex_header.proto_ids_size {
+        v.push(ProtoIdItem {
+            shorty_idx: read_u32(reader),
+            return_type_idx: read_u32(reader),
+            parameters_off: read_u32(reader),
+        });
+    }
+    v
+}
+
+#[derive(Debug)]
+struct ProtoIdItem {
+    shorty_idx: u32,
+    return_type_idx: u32,
+    parameters_off: u32,
 }
 
 
