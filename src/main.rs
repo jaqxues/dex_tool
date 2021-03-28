@@ -1,8 +1,9 @@
 mod raw_dex;
 
 use std::fs::{File};
-use std::io::{BufReader};
-use crate::raw_dex::DexHeader;
+use std::io::{BufReader, Seek};
+use crate::raw_dex::{DexHeader, read_u32, read_u16, MapItem};
+use std::io::SeekFrom::Start;
 
 const SUPPORTED_DEX_VERSIONS: [u16; 4] = [35, 37, 38, 39];
 
@@ -29,6 +30,7 @@ fn main() {
     println!("File Format Version: {}", version);
     println!("{:#X?}", dex_header);
 
+    let map_list = MapItem::parse_map_list(&dex_header, &mut reader);
     let strings = raw_dex::parse_strings(&dex_header, &mut reader);
     let type_ids = raw_dex::parse_types(&dex_header, &mut reader);
     let proto_ids = raw_dex::parse_protos(&dex_header, &mut reader);

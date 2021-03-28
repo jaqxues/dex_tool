@@ -1,5 +1,5 @@
-use std::io::{BufReader, Read, Seek};
-use std::fs::File;
+use std::io::{BufReader, Read, Seek, BufRead};
+use std::fs::{File, read};
 use std::io::SeekFrom::Start;
 
 // Bytes [4..7] specify Dex Format Version
@@ -8,8 +8,13 @@ const DEX_FILE_MAGIC: [u8; 8] = [0x64, 0x65, 0x78, 0x0a, 0x30, 0x33, 0x39, 0x00]
 const ENDIAN_CONSTANT: u32 = 0x12345678;
 const REVERSE_ENDIAN_CONSTANT: u32 = 0x78563412;
 
+pub fn read_u16(reader: &mut BufReader<File>) -> u16 {
+    let mut buf = [0u8; 2];
+    reader.read(&mut buf).unwrap();
+    u16::from_le_bytes(buf)
+}
 
-fn read_u32(reader: &mut BufReader<File>) -> u32 {
+pub fn read_u32(reader: &mut BufReader<File>) -> u32 {
     let mut buf = [0u8; 4];
     reader.read(&mut buf).unwrap();
     u32::from_le_bytes(buf)
@@ -66,6 +71,30 @@ pub fn parse_protos(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Vec
         });
     }
     v
+}
+
+#[derive(Debug)]
+pub struct MapItem {
+    pub item_type: u16,
+    pub size: u32,
+    pub offset: u32,
+}
+
+impl MapItem {
+    pub fn parse_map_list(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Vec<MapItem> {
+        reader.seek(Start(dex_header.map_off.into()));
+
+        let size = read_u32(reader);
+        let mut v = Vec::with_capacity(size as usize);
+        for _ in 0..size {
+            let item_type = read_u16(reader);
+            read_u16(reader); // unused
+            let size = read_u32(reader);
+            let offset = read_u32(reader);
+            v.push(MapItem { item_type, size, offset })
+        }
+        v
+    }
 }
 
 #[derive(Debug)]
