@@ -34,4 +34,7 @@ fn main() {
     let _strings = raw_dex::parse_strings(&dex_header, &mut reader);
     let _type_ids = raw_dex::parse_types(&dex_header, &mut reader);
     let _proto_ids = raw_dex::parse_protos(&dex_header, &mut reader);
+    let _field_ids = raw_dex::parse_fields(&dex_header, &mut reader);
+    let _method_ids = raw_dex::parse_methods(&dex_header, &mut reader);
+    let _class_defs = raw_dex::parse_classes(&dex_header, &mut reader);
 }

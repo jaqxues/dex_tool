@@ -1,7 +1,8 @@
 use std::io::{BufReader, Read, Seek};
-use std::fs::{File};
+use std::fs::{File, read};
 use std::io::SeekFrom::Start;
 use crate::m_utf8;
+use crate::m_utf8::read_byte;
 
 // Bytes [4..7] specify Dex Format Version
 // In string format: "dex\n035\0" with 035 being the Dex Format Version
@@ -41,6 +42,9 @@ pub fn parse_strings(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Ve
         reader.seek(Start(string_data_off.into())).unwrap();
 
         let size = leb128::read::unsigned(reader).unwrap();
+        // let mut v = vec![0u8; size as usize];
+        // reader.read_exact(&mut v).unwrap();
+        // let string = String::from_utf8(v).unwrap_or(String::new());
         let string = m_utf8::to_string(reader, size).unwrap();
         strings.push(string);
     }
@@ -72,12 +76,90 @@ pub fn parse_protos(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Vec
     v
 }
 
+pub fn parse_fields(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Vec<FieldId> {
+    let size = dex_header.field_ids_size as usize;
+    if size == 0 { return Vec::new() }
+    let mut v = Vec::with_capacity(size);
+    reader.seek(Start(dex_header.field_ids_off.into())).unwrap();
+    for _ in 0..size {
+        v.push(FieldId {
+            class_idx: read_u16(reader),
+            type_idx: read_u16(reader),
+            name_idx: read_u32(reader),
+        });
+    }
+    v
+}
+
+pub fn parse_methods(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Vec<MethodId> {
+    let size = dex_header.method_ids_size as usize;
+    if size == 0 { return Vec::new() }
+    let mut v = Vec::with_capacity(size);
+    reader.seek(Start(dex_header.method_ids_off.into())).unwrap();
+    for _ in 0..size {
+        v.push(MethodId {
+            class_idx: read_u16(reader),
+            proto_idx: read_u16(reader),
+            name_idx: read_u32(reader),
+        });
+    }
+    v
+}
+
+pub fn parse_classes(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Vec<ClassDef> {
+    let size = dex_header.class_defs_size as usize;
+    if size == 0 { return Vec::new() }
+    let mut v = Vec::with_capacity(size);
+    reader.seek(Start(dex_header.class_defs_off.into())).unwrap();
+
+    for _ in 0..size {
+        v.push(ClassDef {
+            class_idx: read_u32(reader),
+            access_flags: read_u32(reader),
+            superclass_idx: read_u32(reader),
+            interfaces_off: read_u32(reader),
+            source_file_idx: read_u32(reader),
+            annotations_off: read_u32(reader),
+            class_data_off: read_u32(reader),
+            static_values_off: read_u32(reader)
+        });
+    }
+    v
+}
+
+#[derive(Debug)]
+pub struct FieldId {
+    pub class_idx: u16,
+    pub type_idx: u16,
+    pub name_idx: u32,
+}
+
+#[derive(Debug)]
+pub struct MethodId {
+    pub class_idx: u16,
+    pub proto_idx: u16,
+    pub name_idx: u32,
+}
+
+#[derive(Debug)]
+pub struct ClassDef {
+    pub class_idx: u32,
+    pub access_flags: u32,
+    pub superclass_idx: u32,
+    pub interfaces_off: u32,
+    pub source_file_idx: u32,
+    pub annotations_off: u32,
+    pub class_data_off: u32,
+    pub static_values_off: u32
+}
+
 #[derive(Debug)]
 pub struct MapItem {
     pub item_type: u16,
     pub size: u32,
     pub offset: u32,
 }
+
 
 impl MapItem {
     pub fn parse_map_list(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Vec<MapItem> {
@@ -152,21 +234,26 @@ impl DexHeader {
     }
 
     pub fn from_reader(reader: &mut BufReader<File>) -> DexHeader {
-        let mut magic = [0u8; DEX_FILE_MAGIC.len()];
-        reader.read(&mut magic).unwrap();
-        DexHeader::verify_magic(&magic);
-
-        let checksum: u32 = read_u32(reader);
-        let mut signature = [0u8; 20];
-        reader.read(&mut signature).unwrap();
-
-        let header = DexHeader {
-            magic,
-            checksum,
-            signature,
+        DexHeader {
+            magic: {
+                let mut magic = [0u8; DEX_FILE_MAGIC.len()];
+                reader.read(&mut magic).unwrap();
+                DexHeader::verify_magic(&magic);
+                magic
+            },
+            checksum: read_u32(reader),
+            signature: {
+                let mut signature = [0u8; 20];
+                reader.read(&mut signature).unwrap();
+                signature
+            },
             file_size: read_u32(reader),
             header_size: read_u32(reader),
-            endian_tag: read_u32(reader),
+            endian_tag: {
+                let tag = read_u32(reader);
+                DexHeader::verify_endian(tag);
+                tag
+            },
             link_size: read_u32(reader),
             link_off: read_u32(reader),
             map_off: read_u32(reader),
@@ -184,10 +271,6 @@ impl DexHeader {
             class_defs_off: read_u32(reader),
             data_size: read_u32(reader),
             data_off: read_u32(reader),
-        };
-
-        DexHeader::verify_endian(header.endian_tag);
-
-        header
+        }
     }
 }

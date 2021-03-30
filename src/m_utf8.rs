@@ -7,7 +7,7 @@ use crate::m_utf8::MUTF8Error::{BadSecondByte, BadByte, BadSecondThirdByte};
 pub enum MUTF8Error {
     BadByte,
     BadSecondByte,
-    BadSecondThirdByte
+    BadSecondThirdByte,
 }
 
 impl std::error::Error for MUTF8Error {}
@@ -31,7 +31,8 @@ pub fn to_string(reader: &mut BufReader<File>, size: u64) -> Result<String, MUTF
         let a = read_byte(reader, &mut buf) as u16;
         if a == 0 {
             let string = String::from_utf16(&out.as_slice()[..s]).unwrap();
-            debug_assert!(s == size as usize, "Declared Length ({}) does not match decoded length ({})", size, s);
+            debug_assert!(s == size as usize,
+                          "Declared Length ({}) does not match decoded length ({})", size, s);
             return Ok(string);
         }
         out[s] = a as u16;
@@ -41,7 +42,7 @@ pub fn to_string(reader: &mut BufReader<File>, size: u64) -> Result<String, MUTF
         } else if (a & 0xe0) == 0xc0 {
             let b = read_byte(reader, &mut buf) as u16;
             if (b & 0xc0) != 0x80 {
-                return Err(BadSecondByte)
+                return Err(BadSecondByte);
             }
             out[s] = (((a & 0x1f) << 6) | (b & 0x3f)) as u16;
             s += 1;
@@ -49,12 +50,12 @@ pub fn to_string(reader: &mut BufReader<File>, size: u64) -> Result<String, MUTF
             let b = read_byte(reader, &mut buf) as u16;
             let c = read_byte(reader, &mut buf) as u16;
             if ((b & 0xc0) != 0x80) || ((c & 0xc0) != 0x80) {
-                return Err(BadSecondThirdByte)
+                return Err(BadSecondThirdByte);
             }
             out[s] = (((a & 0x0f) << 12) | ((b & 0x3f) << 6) | (c & 0x3f)) as u16;
             s += 1;
         } else {
-            return Err(BadByte)
+            return Err(BadByte);
         }
     }
 }
