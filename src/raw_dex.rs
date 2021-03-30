@@ -1,6 +1,7 @@
-use std::io::{BufReader, Read, Seek, BufRead};
-use std::fs::{File, read};
+use std::io::{BufReader, Read, Seek};
+use std::fs::{File};
 use std::io::SeekFrom::Start;
+use crate::m_utf8;
 
 // Bytes [4..7] specify Dex Format Version
 // In string format: "dex\n035\0" with 035 being the Dex Format Version
@@ -40,9 +41,7 @@ pub fn parse_strings(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Ve
         reader.seek(Start(string_data_off.into())).unwrap();
 
         let size = leb128::read::unsigned(reader).unwrap();
-        let mut v = vec![0u8; size as usize];
-        reader.read_exact(&mut v).unwrap();
-        let string = String::from_utf8(v).unwrap_or(String::new());
+        let string = m_utf8::to_string(reader, size);
         strings.push(string);
     }
 
@@ -82,7 +81,7 @@ pub struct MapItem {
 
 impl MapItem {
     pub fn parse_map_list(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Vec<MapItem> {
-        reader.seek(Start(dex_header.map_off.into()));
+        reader.seek(Start(dex_header.map_off.into())).unwrap();
 
         let size = read_u32(reader);
         let mut v = Vec::with_capacity(size as usize);
