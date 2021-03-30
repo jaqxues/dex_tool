@@ -41,7 +41,7 @@ pub fn parse_strings(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Ve
         reader.seek(Start(string_data_off.into())).unwrap();
 
         let size = leb128::read::unsigned(reader).unwrap();
-        let string = m_utf8::to_string(reader, size);
+        let string = m_utf8::to_string(reader, size).unwrap();
         strings.push(string);
     }
 
