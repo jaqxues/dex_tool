@@ -1,9 +1,10 @@
+use std::fs::File;
+use std::io::BufReader;
+
+use crate::raw_dex::{DexHeader, MapItem};
+
 mod raw_dex;
 mod m_utf8;
-
-use std::fs::{File};
-use std::io::{BufReader};
-use crate::raw_dex::{DexHeader, MapItem};
 
 const SUPPORTED_DEX_VERSIONS: [u16; 4] = [35, 37, 38, 39];
 
@@ -37,4 +38,5 @@ fn main() {
     let _field_ids = raw_dex::parse_fields(&dex_header, &mut reader);
     let _method_ids = raw_dex::parse_methods(&dex_header, &mut reader);
     let _class_defs = raw_dex::parse_classes(&dex_header, &mut reader);
+    raw_dex::parse_call_side_items(&_map_list, &mut reader)
 }

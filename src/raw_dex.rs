@@ -1,6 +1,8 @@
+use std::convert::TryInto;
+use std::fs::File;
 use std::io::{BufReader, Read, Seek};
-use std::fs::{File, read};
 use std::io::SeekFrom::Start;
+
 use crate::m_utf8;
 use crate::m_utf8::read_byte;
 
@@ -127,6 +129,70 @@ pub fn parse_classes(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Ve
     v
 }
 
+/** TODO Not Done */
+pub fn parse_call_side_items(map: &Vec<MapItem>, reader: &mut BufReader<File>) {
+    let mut offset = 0u32;
+    for it in map {
+        if it.item_type == 0x07 {
+            debug_assert!(it.size == 4);
+            reader.seek(Start(it.offset.into())).unwrap();
+            offset = read_u32(reader);
+        }
+    }
+
+    if offset == 0 {
+        return;
+    }
+    let mut buf = [0u8; 1];
+    reader.seek(Start(offset.into())).unwrap();
+
+    let size = leb128::read::unsigned(reader).unwrap();
+    let method_handle = raw_encoded_value_u32(reader, 0x16, &mut buf);
+    let method_name = raw_encoded_value_u32(reader, 0x17, &mut buf);
+    let method_type = raw_encoded_value_u32(reader, 0x15, &mut buf);
+    for _ in 0..size - 3 {
+        parse_encoded_value(reader, &mut buf);
+    }
+}
+
+fn raw_encoded_value_u32(reader: &mut BufReader<File>, expected_type: u8, buf: &mut [u8; 1]) -> u32 {
+    let (value_arg, value_type) = raw_encoded_value_pre(reader, buf);
+
+    // debug_assert!(value_type == 0x15 || value_type == 0x16 || value_type == 0x17);
+    assert_eq!(value_type, expected_type);
+
+    let mut v = vec![0u8; value_arg as usize + 1];
+    reader.read_exact(v.as_mut_slice()).unwrap();
+    u32::from_le_bytes(v.as_slice().try_into().unwrap())
+}
+
+fn parse_encoded_value(reader: &mut BufReader<File>, buf: &mut [u8; 1]) -> EncodedValue {
+    let (value_type, value_arg) = raw_encoded_value_pre(reader, buf);
+    println!("Encoded Value: {:?}", (value_type, value_arg));
+    match value_type {
+        _ => panic!()
+    }
+}
+
+/**
+Returns the first byte of an encoded value (value_arg, value_type) as tuple
+*/
+fn raw_encoded_value_pre(reader: &mut BufReader<File>, buf: &mut [u8; 1]) -> (u8, u8) {
+    let byte = read_byte(reader, buf);
+    let value_arg = (byte & 0xe0) >> 5;
+    let value_type = byte & 0x1f;
+
+    debug_assert!(match value_type {
+        0x00 | 0x1c..=0x1e => value_arg == 0,
+        0x02 | 0x03 | 0x1f => value_arg == 0 || value_arg == 1,
+        0x04 | 0x10 | 0x15..=0x1b => value_arg <= 3,
+        0x06 | 0x11 => 0 <= value_arg && value_arg <= 7,
+        _ => panic!("Unmatched Value Type after exhaustively checking every listed format")
+    });
+
+    (value_arg, value_type)
+}
+
 #[derive(Debug)]
 pub struct FieldId {
     pub class_idx: u16,
@@ -150,7 +216,14 @@ pub struct ClassDef {
     pub source_file_idx: u32,
     pub annotations_off: u32,
     pub class_data_off: u32,
-    pub static_values_off: u32
+    pub static_values_off: u32,
+}
+
+
+#[derive(Debug)]
+pub struct MethodHandle {
+    pub method_handle_type: u8,
+    pub field_or_method_id: u8,
 }
 
 #[derive(Debug)]
@@ -273,4 +346,26 @@ impl DexHeader {
             data_off: read_u32(reader),
         }
     }
+}
+
+#[derive(Debug)]
+enum EncodedValue {
+    Byte(u8),
+    Short(i16),
+    Char(u16),
+    Int(i16),
+    Long(i64),
+    Float(f32),
+    Double(f64),
+    MethodType(u32),
+    MethodHandle(u32),
+    String(u32),
+    Type(u32),
+    Field(u32),
+    Method(u32),
+    Enum(u32),
+    Array,
+    Annotation,
+    Null,
+    Boolean(bool),
 }
