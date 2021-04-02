@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::convert::TryInto;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek};
@@ -80,7 +81,7 @@ pub fn parse_protos(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Vec
 
 pub fn parse_fields(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Vec<FieldId> {
     let size = dex_header.field_ids_size as usize;
-    if size == 0 { return Vec::new() }
+    if size == 0 { return Vec::new(); }
     let mut v = Vec::with_capacity(size);
     reader.seek(Start(dex_header.field_ids_off.into())).unwrap();
     for _ in 0..size {
@@ -95,7 +96,7 @@ pub fn parse_fields(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Vec
 
 pub fn parse_methods(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Vec<MethodId> {
     let size = dex_header.method_ids_size as usize;
-    if size == 0 { return Vec::new() }
+    if size == 0 { return Vec::new(); }
     let mut v = Vec::with_capacity(size);
     reader.seek(Start(dex_header.method_ids_off.into())).unwrap();
     for _ in 0..size {
@@ -110,7 +111,7 @@ pub fn parse_methods(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Ve
 
 pub fn parse_classes(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Vec<ClassDef> {
     let size = dex_header.class_defs_size as usize;
-    if size == 0 { return Vec::new() }
+    if size == 0 { return Vec::new(); }
     let mut v = Vec::with_capacity(size);
     reader.seek(Start(dex_header.class_defs_off.into())).unwrap();
 
@@ -123,7 +124,7 @@ pub fn parse_classes(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Ve
             source_file_idx: read_u32(reader),
             annotations_off: read_u32(reader),
             class_data_off: read_u32(reader),
-            static_values_off: read_u32(reader)
+            static_values_off: read_u32(reader),
         });
     }
     v
@@ -193,6 +194,75 @@ fn raw_encoded_value_pre(reader: &mut BufReader<File>, buf: &mut [u8; 1]) -> (u8
     (value_arg, value_type)
 }
 
+pub fn parse_method_handle(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> MethodHandle {
+    let mut offset = 0u32;
+    for it in map_list {
+        if it.item_type == 0x08 {
+            offset = it.offset;
+            break;
+        }
+    }
+    reader.seek(Start(offset.into()));
+    MethodHandle {
+        method_handle_type: read_u16(reader),
+        field_or_method_id: {
+            read_u16(reader);
+            let used = read_u16(reader);
+            read_u16(reader);
+            used
+        },
+    }
+}
+
+pub fn parse_class_data(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> (Vec<EncodedField>, Vec<EncodedField>, Vec<EncodedMethod>, Vec<EncodedMethod>) {
+    let mut offset = 0;
+    for i in map_list {
+        if i.item_type == 0x2000 {
+            offset = i.offset;
+            break;
+        }
+    }
+    if offset == 0 { panic!("No Class Data Offset Found"); }
+    reader.seek(Start(offset.into())).unwrap();
+
+    let static_fields_size = leb128::read::unsigned(reader).unwrap();
+    let instance_fields_size = leb128::read::unsigned(reader).unwrap();
+    let direct_methods_size = leb128::read::unsigned(reader).unwrap();
+    let virtual_methods_size = leb128::read::unsigned(reader).unwrap();
+
+    let mut static_fields = Vec::with_capacity(static_fields_size as usize);
+    let mut instance_fields = Vec::with_capacity(instance_fields_size as usize);
+    let mut direct_methods = Vec::with_capacity(direct_methods_size as usize);
+    let mut virtual_methods = Vec::with_capacity(virtual_methods_size as usize);
+
+    fn read_encoded_field(reader: &mut BufReader<File>) -> EncodedField {
+        EncodedField {
+            field_idx_diff: leb128::read::unsigned(reader).unwrap(),
+            access_flags: leb128::read::unsigned(reader).unwrap(),
+        }
+    }
+    fn read_encoded_method(reader: &mut BufReader<File>) -> EncodedMethod {
+        EncodedMethod {
+            method_idx_diff: leb128::read::unsigned(reader).unwrap(),
+            access_flags: leb128::read::unsigned(reader).unwrap(),
+            code_off: leb128::read::unsigned(reader).unwrap(),
+        }
+    }
+    for _ in 0..static_fields_size {
+        static_fields.push(read_encoded_field(reader));
+    }
+    for _ in 0..instance_fields_size {
+        instance_fields.push(read_encoded_field(reader));
+    }
+    for _ in 0..direct_methods_size {
+        direct_methods.push(read_encoded_method(reader));
+    }
+    for _ in 0..virtual_methods_size {
+        virtual_methods.push(read_encoded_method(reader));
+    }
+    (static_fields, instance_fields, direct_methods, virtual_methods)
+}
+
 #[derive(Debug)]
 pub struct FieldId {
     pub class_idx: u16,
@@ -222,8 +292,22 @@ pub struct ClassDef {
 
 #[derive(Debug)]
 pub struct MethodHandle {
-    pub method_handle_type: u8,
-    pub field_or_method_id: u8,
+    pub method_handle_type: u16,
+    pub field_or_method_id: u16,
+}
+
+
+#[derive(Debug)]
+pub struct EncodedField {
+    pub field_idx_diff: u64,
+    pub access_flags: u64,
+}
+
+#[derive(Debug)]
+pub struct EncodedMethod {
+    pub method_idx_diff: u64,
+    pub access_flags: u64,
+    pub code_off: u64,
 }
 
 #[derive(Debug)]
