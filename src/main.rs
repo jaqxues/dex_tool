@@ -38,7 +38,8 @@ fn main() {
     let _field_ids = raw_dex::parse_fields(&dex_header, &mut reader);
     let _method_ids = raw_dex::parse_methods(&dex_header, &mut reader);
     let _class_defs = raw_dex::parse_classes(&dex_header, &mut reader);
-    raw_dex::parse_call_side_items(&map_list, &mut reader);
+    raw_dex::parse_call_side_item(&map_list, &mut reader);
     raw_dex::parse_method_handle(&map_list, &mut reader);
     raw_dex::parse_class_data(&map_list, &mut reader);
+    raw_dex::parse_type_list(&map_list, &mut reader);
 }

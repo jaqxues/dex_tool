@@ -1,6 +1,6 @@
 use std::any::Any;
 use std::convert::TryInto;
-use std::fs::File;
+use std::fs::{File, read};
 use std::io::{BufReader, Read, Seek};
 use std::io::SeekFrom::Start;
 
@@ -130,30 +130,42 @@ pub fn parse_classes(dex_header: &DexHeader, reader: &mut BufReader<File>) -> Ve
     v
 }
 
-/** TODO Not Done */
-pub fn parse_call_side_items(map: &Vec<MapItem>, reader: &mut BufReader<File>) {
-    let mut offset = 0u32;
-    for it in map {
-        if it.item_type == 0x07 {
-            debug_assert!(it.size == 4);
-            reader.seek(Start(it.offset.into())).unwrap();
-            offset = read_u32(reader);
+pub fn find_type_in_map(map_list: &Vec<MapItem>, item_type: u16) -> Option<&MapItem> {
+    let mut item = None;
+    for it in map_list {
+        if it.item_type == item_type {
+            item = Some(it);
+            break;
         }
     }
+    item
+}
 
-    if offset == 0 {
-        return;
-    }
-    let mut buf = [0u8; 1];
-    reader.seek(Start(offset.into())).unwrap();
+/** TODO Not Done */
+pub fn parse_call_side_item(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) {
+    let item = find_type_in_map(map_list, 0x07);
 
-    let size = leb128::read::unsigned(reader).unwrap();
-    let method_handle = raw_encoded_value_u32(reader, 0x16, &mut buf);
-    let method_name = raw_encoded_value_u32(reader, 0x17, &mut buf);
-    let method_type = raw_encoded_value_u32(reader, 0x15, &mut buf);
-    for _ in 0..size - 3 {
-        parse_encoded_value(reader, &mut buf);
+    if item.is_some() {
+        panic!("Call Site Id Item was not null!");
     }
+    // let item = item.unwrap();
+    //
+    // reader.seek(Start(item.offset.into())).unwrap();
+    //
+    // let mut offsets = Vec::with_capacity(item.size as usize);
+    // for _ in 0..item.size {
+    //     offsets.push(read_u32(reader));
+    // }
+    // let mut buf = [0u8; 1];
+    // reader.seek(Start(offset.into())).unwrap();
+    //
+    // let size = leb128::read::unsigned(reader).unwrap();
+    // let method_handle = raw_encoded_value_u32(reader, 0x16, &mut buf);
+    // let method_name = raw_encoded_value_u32(reader, 0x17, &mut buf);
+    // let method_type = raw_encoded_value_u32(reader, 0x15, &mut buf);
+    // for _ in 0..size - 3 {
+    //     parse_encoded_value(reader, &mut buf);
+    // }
 }
 
 fn raw_encoded_value_u32(reader: &mut BufReader<File>, expected_type: u8, buf: &mut [u8; 1]) -> u32 {
@@ -194,24 +206,47 @@ fn raw_encoded_value_pre(reader: &mut BufReader<File>, buf: &mut [u8; 1]) -> (u8
     (value_arg, value_type)
 }
 
-pub fn parse_method_handle(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> MethodHandle {
-    let mut offset = 0u32;
-    for it in map_list {
-        if it.item_type == 0x08 {
-            offset = it.offset;
-            break;
+pub fn parse_method_handle(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> Vec<MethodHandle> {
+    let item = find_type_in_map(map_list, 0x08);
+    if item.is_none() { return Vec::new(); }
+    let item = item.unwrap();
+
+    let mut v = Vec::with_capacity(item.size as usize);
+
+    reader.seek(Start(item.offset.into()));
+    for _ in 0..item.size {
+        v.push(MethodHandle {
+            method_handle_type: read_u16(reader),
+            field_or_method_id: {
+                read_u16(reader);
+                let used = read_u16(reader);
+                read_u16(reader);
+                used
+            },
+        });
+    }
+    v
+}
+
+pub fn parse_type_list(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> Vec<Vec<u16>> {
+    let item = find_type_in_map(map_list, 0x1001);
+    println!("Type List Size: {}", 0x1001);
+    if item.is_none() { return Vec::new() }
+    let item = item.unwrap();
+
+    println!("Type List Size: {}", item.size);
+    reader.seek(Start(item.offset.into())).unwrap();
+    let mut v = Vec::with_capacity(item.size as usize);
+
+    for _ in 0..item.size {
+        let size = read_u32(reader);
+        let mut type_list = Vec::with_capacity(size as usize);
+        for _ in 0..size {
+            type_list.push(read_u16(reader));
         }
+        v.push(type_list);
     }
-    reader.seek(Start(offset.into()));
-    MethodHandle {
-        method_handle_type: read_u16(reader),
-        field_or_method_id: {
-            read_u16(reader);
-            let used = read_u16(reader);
-            read_u16(reader);
-            used
-        },
-    }
+    v
 }
 
 pub fn parse_class_data(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> (Vec<EncodedField>, Vec<EncodedField>, Vec<EncodedMethod>, Vec<EncodedMethod>) {
