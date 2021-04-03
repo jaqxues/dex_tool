@@ -230,19 +230,21 @@ pub fn parse_method_handle(map_list: &Vec<MapItem>, reader: &mut BufReader<File>
 
 pub fn parse_type_list(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> Vec<Vec<u16>> {
     let item = find_type_in_map(map_list, 0x1001);
-    println!("Type List Size: {}", 0x1001);
     if item.is_none() { return Vec::new() }
     let item = item.unwrap();
 
-    println!("Type List Size: {}", item.size);
     reader.seek(Start(item.offset.into())).unwrap();
     let mut v = Vec::with_capacity(item.size as usize);
+    let mut buf = [0u8; 2];
 
     for _ in 0..item.size {
         let size = read_u32(reader);
         let mut type_list = Vec::with_capacity(size as usize);
         for _ in 0..size {
             type_list.push(read_u16(reader));
+        }
+        if size % 2 == 1 {
+            reader.read_exact(&mut buf);
         }
         v.push(type_list);
     }

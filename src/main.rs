@@ -1,5 +1,7 @@
+use std::borrow::Borrow;
 use std::fs::File;
 use std::io::BufReader;
+use std::iter::{FromIterator, Map};
 
 use crate::raw_dex::{DexHeader, MapItem};
 
@@ -41,5 +43,8 @@ fn main() {
     raw_dex::parse_call_side_item(&map_list, &mut reader);
     raw_dex::parse_method_handle(&map_list, &mut reader);
     raw_dex::parse_class_data(&map_list, &mut reader);
-    raw_dex::parse_type_list(&map_list, &mut reader);
+    let type_list = raw_dex::parse_type_list(&map_list, &mut reader);
+    for u in type_list {
+        println!("{:#?}", Vec::from_iter(u.iter().map({ |x| &_strings[_type_ids[*x as usize] as usize] })));
+    }
 }
