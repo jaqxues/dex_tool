@@ -44,7 +44,7 @@ fn main() {
     let method_handles = raw_dex::parse_method_handles(&map, &mut reader);
     let class_data = raw_dex::parse_class_data(&map, &mut reader);
     let type_list = raw_dex::parse_type_lists(&map, &mut reader);
-    // let code_items = raw_dex::parse_code_items(&map, &mut reader);
+    let code_items = raw_dex::parse_code_items(&map, &mut reader);
     let debug_info = raw_dex::parse_debug_info(&map, &mut reader);
     let annotations_directories = raw_dex::parse_annotations_directories(&map, &mut reader);
     let annotation_set_ref_list = raw_dex::parse_annotation_set_ref_list(&map, &mut reader);

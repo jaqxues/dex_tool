@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek};
-use std::io::SeekFrom::Start;
+use std::io::SeekFrom::{Current, Start};
 
 // Bytes [4..7] specify Dex Format Version
 // In string format: "dex\n035\0" with 035 being the Dex Format Version
@@ -296,7 +296,6 @@ pub fn parse_type_lists(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -
     v
 }
 
-// fixme
 pub fn parse_code_items(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> Vec<CodeItem> {
     let item = find_type_in_map(map_list, 0x2001).unwrap();
     reader.seek(Start(item.offset.into())).unwrap();
@@ -310,6 +309,8 @@ pub fn parse_code_items(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -
         let tries_size = read_u16(reader);
         let debug_info_off = read_u32(reader);
         let insns_size = read_u32(reader);
+
+        let mut current_pos = reader.seek(Current(0)).unwrap();
         v.push(CodeItem {
             registers_size,
             ins_size,
@@ -357,14 +358,19 @@ pub fn parse_code_items(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -
                                 v
                             },
                             catch_all_addr: {
-                                if size < 0 { None } else { Some(leb128::read::unsigned(reader).unwrap()) }
+                                if size > 0 { None } else { Some(leb128::read::unsigned(reader).unwrap()) }
                             },
                         })
                     }
                     v
                 }
             },
-        })
+        });
+        current_pos = reader.seek(Current(0)).unwrap() - current_pos;
+        if current_pos % 4 != 0 {
+            let mut v = vec![0u8; (4 - current_pos % 4) as usize];
+            reader.read_exact(v.as_mut_slice()).unwrap();
+        }
     }
     v
 }
@@ -761,7 +767,6 @@ pub struct TryItem {
 
 #[derive(Debug)]
 pub struct EncodedCatchHandler {
-    /// EncodedTypeAddrPair as tuple
     pub handlers: Vec<EncodedTypeAddrPair>,
     pub catch_all_addr: Option<u64>,
 }
