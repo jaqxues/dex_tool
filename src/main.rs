@@ -33,16 +33,4 @@ fn main() {
     println!("File Format Version: {}", version);
     println!("{:#X?}", dex_header);
 
-    let map_list = MapItem::parse_map_list(&dex_header, &mut reader);
-    let _strings = raw_dex::parse_strings(&dex_header, &mut reader);
-    let _type_ids = raw_dex::parse_types(&dex_header, &mut reader);
-    let _proto_ids = raw_dex::parse_protos(&dex_header, &mut reader);
-    let _field_ids = raw_dex::parse_fields(&dex_header, &mut reader);
-    let _method_ids = raw_dex::parse_methods(&dex_header, &mut reader);
-    let _class_defs = raw_dex::parse_classes(&dex_header, &mut reader);
-    raw_dex::parse_call_side_item(&map_list, &mut reader);
-    raw_dex::parse_method_handle(&map_list, &mut reader);
-    raw_dex::parse_class_data(&map_list, &mut reader);
-    let type_list = raw_dex::parse_type_list(&map_list, &mut reader);
-    raw_dex::parse_annotation_set_ref_list(&map_list, &mut reader);
 }
