@@ -142,7 +142,7 @@ pub fn parse_call_side_ids(map_list: &Vec<MapItem>, reader: &mut BufReader<File>
     v
 }
 
-/** TODO Not Done */
+// TODO
 pub fn parse_call_side_item(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) {
     let item = find_type_in_map(map_list, 0x07);
 
@@ -365,7 +365,7 @@ pub fn parse_code_items(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -
 }
 
 
-pub fn parse_debug_info(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) {
+pub fn parse_debug_info(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> Vec<DebugInfoItem> {
     let item = find_type_in_map(map_list, 0x2003);
     if item.is_none() { panic!("No Debug Info Found") }
     let item = item.unwrap();
@@ -373,22 +373,80 @@ pub fn parse_debug_info(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) {
     reader.seek(Start(item.offset.into())).unwrap();
     let mut v = Vec::with_capacity(item.size as usize);
     for _ in 0..item.size {
-        let line_start = leb128::read::unsigned(reader).unwrap();
-        let parameters_size = leb128::read::unsigned(reader).unwrap();
+        v.push(DebugInfoItem {
+            line_start: leb128::read::unsigned(reader).unwrap(),
+            parameter_names: {
+                let size = leb128::read::unsigned(reader).unwrap();
 
-        let mut parameter_names = Vec::with_capacity(parameters_size as usize);
-        for _ in 0..parameters_size {
-            parameter_names.push(i64::try_from(leb128::read::unsigned(reader).unwrap()).unwrap() - 1);
-        }
-        loop {
-            let mut buf = [0u8];
-            reader.read_exact(&mut buf).unwrap();
-            if buf[0] == 0x00 {
-                break;
-            }
-        }
-        v.push((line_start, parameter_names));
+                let mut v = Vec::with_capacity(size as usize);
+                for _ in 0..parameters_size {
+                    v.push(i64::try_from(leb128::read::unsigned(reader).unwrap()).unwrap() - 1);
+                }
+                v
+            },
+            state_machine_bytes: {
+                let mut buf = [0u8];
+                let mut v = Vec::new();
+                loop {
+                    reader.read_exact(&mut buf).unwrap();
+                    if buf[0] == 0x00 {
+                        break;
+                    }
+                    v.push(buf[0]);
+                }
+                v
+            },
+        });
     }
+    v
+}
+
+pub fn parse_annotations_directories(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> Vec<AnnotationsDirectory> {
+    let item = find_type_in_map(map_list, 0x2006).unwrap();
+    reader.seek(Start(item.offset.into())).unwrap();
+
+    let mut v = Vec::with_capacity(item.size as usize);
+    for _ in 0..item.size {
+        let class_annotations_off = read_u32(reader);
+        let fields_size = read_u32(reader);
+        let annotated_methods_size = read_u32(reader);
+        let annotated_parameters_size = read_u32(reader);
+
+        v.push(AnnotationsDirectory {
+            class_annotations_off,
+            field_annotations: {
+                let mut v = Vec::with_capacity(fields_size as usize);
+                for _ in 0..fields_size {
+                    v.push(FieldAnnotation {
+                        field_idx: read_u32(reader),
+                        annotations_off: read_u32(reader),
+                    });
+                }
+                v
+            },
+            method_annotations: {
+                let mut v = Vec::with_capacity(annotated_methods_size as usize);
+                for _ in 0..annotated_methods_size {
+                    v.push(MethodAnnotation {
+                        method_idx: read_u32(reader),
+                        annotations_off: read_u32(reader),
+                    });
+                }
+                v
+            },
+            parameter_annotations: {
+                let mut v = Vec::with_capacity(annotated_parameters_size as usize);
+                for _ in 0..annotated_parameters_size {
+                    v.push(ParameterAnnotation {
+                        method_idx: read_u32(reader),
+                        annotations_off: read_u32(reader),
+                    });
+                }
+                v
+            },
+        })
+    }
+    v
 }
 
 pub fn parse_annotation_set_ref_list(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> Vec<Vec<u32>> {
@@ -428,11 +486,13 @@ pub fn parse_annotation_set_item(map_list: &Vec<MapItem>, reader: &mut BufReader
 }
 
 pub fn parse_annotation_item(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) {
-    let item = find_type_in_map(map_list, 0x2004);
-    if item.is_none() { panic!("Annotation Item Not Found"); }
-    let item = item.unwrap();
-
+    let item = find_type_in_map(map_list, 0x2004).unwrap();
     reader.seek(Start(item.offset.into())).unwrap();
+
+    let mut v = Vec::with_capacity(item.size as usize);
+    for _ in 0..item.size {
+        v.push()
+    }
 }
 
 
@@ -647,6 +707,56 @@ pub struct EncodedTypeAddrPair {
     pub addr: u64,
 }
 
+#[derive(Debug)]
+pub struct DebugInfoItem {
+    pub line_start: u64,
+    pub parameter_names: Vec<i64>,
+    pub state_machine_bytes: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub struct AnnotationsDirectory {
+    pub class_annotations_off: u32,
+    pub field_annotations: Vec<FieldAnnotation>,
+    pub method_annotations: Vec<MethodAnnotation>,
+    pub parameter_annotations: Vec<ParameterAnnotation>,
+}
+
+#[derive(Debug)]
+pub struct FieldAnnotation {
+    pub field_idx: u32,
+    pub annotations_off: u32,
+}
+
+#[derive(Debug)]
+pub struct MethodAnnotation {
+    pub method_idx: u32,
+    pub annotations_off: u32,
+}
+
+#[derive(Debug)]
+pub struct ParameterAnnotation {
+    pub method_idx: u32,
+    pub annotations_off: u32,
+}
+
+#[derive(Debug)]
+pub struct AnnotationItem {
+    pub visibility: u8,
+    pub annotation: EncodedAnnotation,
+}
+
+#[derive(Debug)]
+pub struct EncodedAnnotation {
+    pub type_idx: u64,
+    pub elements: Vec<AnnotationElement>,
+}
+
+#[derive(Debug)]
+pub struct AnnotationElement {
+    pub name_idx: u64,
+    pub value: EncodedValue,
+}
 
 #[derive(Debug)]
 pub struct MapItem {
