@@ -1,7 +1,11 @@
 use std::convert::TryFrom;
-use std::fs::File;
+use std::fs::{File, read};
 use std::io::{BufReader, Read, Seek};
 use std::io::SeekFrom::{Current, Start};
+
+use crate::m_utf8;
+use crate::raw_dex::EncodedValue::Boolean;
+use crate::raw_dex::Visibility::{VisibilityBuild, VisibilityRuntime, VisibilitySystem};
 
 // Bytes [4..7] specify Dex Format Version
 // In string format: "dex\n035\0" with 035 being the Dex Format Version
@@ -44,13 +48,13 @@ pub fn parse_string_data(string_data_offs: Vec<u32>, reader: &mut BufReader<File
 
         let size = leb128::read::unsigned(reader).unwrap();
 
-        // UTF-8 Encoding
-        let mut v = vec![0u8; size as usize];
-        reader.read_exact(&mut v).unwrap();
-        let string = String::from_utf8(v).unwrap_or(String::new());
+        // UTF-8 Encoding ("" if it fails)
+        // let mut v = vec![0u8; size as usize];
+        // reader.read_exact(&mut v).unwrap();
+        // let string = String::from_utf8(v).unwrap_or(String::new());
 
         // MUTF-8 Encoding
-        // let string = m_utf8::to_string(reader, size).unwrap();
+        let string = m_utf8::to_string(reader, size).unwrap();
         strings.push(string);
     }
 
@@ -460,13 +464,10 @@ pub fn parse_annotations_directories(map_list: &Vec<MapItem>, reader: &mut BufRe
     v
 }
 
-// TODO
 pub fn parse_annotation_set_ref_list(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> Vec<Vec<u32>> {
-    let item = find_type_in_map(map_list, 0x1002);
-    if item.is_none() { panic!("No AnnotationSetRefList Found"); }
-    let item = item.unwrap();
-
+    let item = find_type_in_map(map_list, 0x1002).unwrap();
     reader.seek(Start(item.offset.into())).unwrap();
+
     let mut v = Vec::with_capacity(item.size as usize);
     for _ in 0..item.size {
         let size = read_u32(reader);
@@ -479,37 +480,41 @@ pub fn parse_annotation_set_ref_list(map_list: &Vec<MapItem>, reader: &mut BufRe
     v
 }
 
-// TODO
 pub fn parse_annotation_set_item(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> Vec<Vec<u32>> {
-    let item = find_type_in_map(map_list, 0x1003);
-    if item.is_none() { panic!("No Annotation Set Item Found") }
-    let item = item.unwrap();
-
+    let item = find_type_in_map(map_list, 0x1003).unwrap();
     reader.seek(Start(item.offset.into())).unwrap();
-    let mut offsets = Vec::with_capacity(item.size as usize);
+
+    let mut v = Vec::with_capacity(item.size as usize);
     for _ in 0..item.size {
         let size = read_u32(reader);
-        let mut entries = Vec::with_capacity(size as usize);
+        let mut list = Vec::with_capacity(size as usize);
         for _ in 0..size {
-            entries.push(read_u32(reader));
+            list.push(read_u32(reader));
         }
-        offsets.push(entries);
+        v.push(list);
     }
-    offsets
+    v
 }
 
-// TODO
 pub fn parse_annotation_item(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) {
-    // let item = find_type_in_map(map_list, 0x2004).unwrap();
-    // reader.seek(Start(item.offset.into())).unwrap();
-    //
-    // let mut v = Vec::with_capacity(item.size as usize);
-    // for _ in 0..item.size {
-    //     v.push()
-    // }
+    let item = find_type_in_map(map_list, 0x2004).unwrap();
+    reader.seek(Start(item.offset.into())).unwrap();
+
+    let mut v = Vec::with_capacity(item.size as usize);
+    let mut buf = [0u8];
+    for _ in 0..item.size {
+        v.push(AnnotationItem {
+            visibility: match read_u8(reader, &mut buf) {
+                0x00 => VisibilityBuild,
+                0x01 => VisibilityRuntime,
+                0x02 => VisibilitySystem,
+                _ => panic!("Unknown visibility byte")
+            },
+            annotation: EncodedAnnotation::from_reader(reader),
+        });
+    }
 }
 
-// TODO
 #[derive(Debug)]
 pub struct AnnotationItem {
     pub visibility: Visibility,
@@ -527,6 +532,25 @@ pub enum Visibility {
 pub struct EncodedAnnotation {
     pub type_idx: u64,
     pub elements: Vec<AnnotationElement>,
+}
+
+impl EncodedAnnotation {
+    fn from_reader(reader: &mut BufReader<File>) -> EncodedAnnotation {
+        EncodedAnnotation {
+            type_idx: leb128::read::unsigned(reader).unwrap(),
+            elements: {
+                let size = leb128::read::unsigned(reader).unwrap();
+                let mut v = Vec::with_capacity(size as usize);
+                for _ in 0..size {
+                    v.push(AnnotationElement {
+                        name_idx: leb128::read::unsigned(reader).unwrap(),
+                        value: EncodedValue::from_reader(reader),
+                    });
+                }
+                v
+            },
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -572,7 +596,7 @@ pub enum EncodedValue {
     Byte(u8),
     Short(i16),
     Char(u16),
-    Int(i16),
+    Int(i32),
     Long(i64),
     Float(f32),
     Double(f64),
@@ -583,10 +607,66 @@ pub enum EncodedValue {
     Field(u32),
     Method(u32),
     Enum(u32),
-    Array,
-    Annotation,
+    Array(Vec<EncodedValue>),
+    Annotation(EncodedAnnotation),
     Null,
     Boolean(bool),
+}
+
+impl EncodedValue {
+    pub fn from_reader(reader: &mut BufReader<File>) -> EncodedValue {
+        let byte = read_u8(reader, &mut [0u8]);
+        let value_arg = (byte & 0xe0) >> 5;
+        let value_type = byte & 0x1f;
+        match value_type {
+            0x00 => EncodedValue::Byte(read_u8(reader, &mut [0u8])),
+            0x02 => {
+                let mut buf = [0u8; 2];
+                reader.read_exact(&mut buf).unwrap();
+                EncodedValue::Short(i16::from_le_bytes(buf))
+            },
+            0x03 => EncodedValue::Char(read_u16(reader)),
+            0x04 => {
+                let mut buf = [0u8; 4];
+                reader.read_exact(&mut buf).unwrap();
+                EncodedValue::Int(i32::from_le_bytes(buf))
+            }
+            0x06 => {
+                let mut buf = [0u8; 8];
+                reader.read_exact(&mut buf).unwrap();
+                EncodedValue::Long(i64::from_le_bytes(buf))
+            }
+            0x10 => {
+                let mut buf = [0u8; 4];
+                reader.read_exact(&mut buf).unwrap();
+                EncodedValue::Float(f32::from_le_bytes(buf))
+            }
+            0x11 => {
+                let mut buf = [0u8; 8];
+                reader.read_exact(&mut buf).unwrap();
+                EncodedValue::Double(f64::from_le_bytes(buf))
+            }
+            0x15 => EncodedValue::MethodType(read_u32(reader)),
+            0x16 => EncodedValue::MethodHandle(read_u32(reader)),
+            0x17 => EncodedValue::String(read_u32(reader)),
+            0x18 => EncodedValue::Type(read_u32(reader)),
+            0x19 => EncodedValue::Field(read_u32(reader)),
+            0x1a => EncodedValue::Method(read_u32(reader)),
+            0x1b => EncodedValue::Enum(read_u32(reader)),
+            0x1c => EncodedValue::Array({
+                let size = leb128::read::unsigned(reader).unwrap();
+                let mut v = Vec::with_capacity(size as usize);
+                for _ in 0..size {
+                    v.push(EncodedValue::from_reader(reader))
+                }
+                v
+            }),
+            0x1d => EncodedValue::Annotation(EncodedAnnotation::from_reader(reader)),
+            0x1e => EncodedValue::Null,
+            0x1f => EncodedValue::Boolean(value_arg != 0),
+            _ => panic!("Unknown value bits for encoded value")
+        }
+    }
 }
 
 
