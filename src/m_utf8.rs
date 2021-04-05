@@ -1,6 +1,6 @@
 use std::fmt;
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::BufReader;
 
 use crate::m_utf8::MUTF8Error::{BadByte, BadSecondByte, BadSecondThirdByte};
 use crate::raw_dex::read_u8;

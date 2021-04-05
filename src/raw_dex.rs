@@ -1,10 +1,7 @@
-use std::any::Any;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 use std::fs::File;
 use std::io::{BufReader, Read, Seek};
 use std::io::SeekFrom::Start;
-
-use crate::m_utf8;
 
 // Bytes [4..7] specify Dex Format Version
 // In string format: "dex\n035\0" with 035 being the Dex Format Version
@@ -131,8 +128,11 @@ pub fn parse_class_defs(dex_header: &DexHeader, reader: &mut BufReader<File>) ->
     v
 }
 
+// TODO Untested
 pub fn parse_call_side_ids(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> Vec<u32> {
-    let item = find_type_in_map(map_list, 0x07).unwrap();
+    let item = find_type_in_map(map_list, 0x07);
+    if item.is_none() { return Vec::new(); }
+    let item = item.unwrap();
     reader.seek(Start(item.offset.into())).unwrap();
 
     let mut v = Vec::with_capacity(item.size as usize);
@@ -142,7 +142,7 @@ pub fn parse_call_side_ids(map_list: &Vec<MapItem>, reader: &mut BufReader<File>
     v
 }
 
-// TODO
+// TODO Untested
 pub fn parse_call_side_item(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) {
     let item = find_type_in_map(map_list, 0x07);
 
@@ -204,9 +204,12 @@ pub fn parse_call_side_item(map_list: &Vec<MapItem>, reader: &mut BufReader<File
     // }
 }
 
+// TODO Untested
 pub fn parse_method_handles(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> Vec<MethodHandle> {
-    let item = find_type_in_map(map_list, 0x08).unwrap();
-    reader.seek(Start(item.offset.into()));
+    let item = find_type_in_map(map_list, 0x08);
+    if item.is_none() { return Vec::new(); }
+    let item = item.unwrap();
+    reader.seek(Start(item.offset.into())).unwrap();
 
     let mut v = Vec::with_capacity(item.size as usize);
     for _ in 0..item.size {
@@ -293,6 +296,7 @@ pub fn parse_type_lists(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -
     v
 }
 
+// fixme
 pub fn parse_code_items(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> Vec<CodeItem> {
     let item = find_type_in_map(map_list, 0x2001).unwrap();
     reader.seek(Start(item.offset.into())).unwrap();
@@ -318,7 +322,7 @@ pub fn parse_code_items(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -
                 }
                 // Padding
                 if tries_size != 0 && insns_size % 2 == 1 {
-                    reader.read_exact(&buf).unwrap();
+                    reader.read_exact(&mut buf).unwrap();
                 }
                 v
             },
@@ -357,6 +361,7 @@ pub fn parse_code_items(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -
                             },
                         })
                     }
+                    v
                 }
             },
         })
@@ -379,7 +384,7 @@ pub fn parse_debug_info(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -
                 let size = leb128::read::unsigned(reader).unwrap();
 
                 let mut v = Vec::with_capacity(size as usize);
-                for _ in 0..parameters_size {
+                for _ in 0..size {
                     v.push(i64::try_from(leb128::read::unsigned(reader).unwrap()).unwrap() - 1);
                 }
                 v
@@ -449,6 +454,7 @@ pub fn parse_annotations_directories(map_list: &Vec<MapItem>, reader: &mut BufRe
     v
 }
 
+// TODO
 pub fn parse_annotation_set_ref_list(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> Vec<Vec<u32>> {
     let item = find_type_in_map(map_list, 0x1002);
     if item.is_none() { panic!("No AnnotationSetRefList Found"); }
@@ -467,6 +473,7 @@ pub fn parse_annotation_set_ref_list(map_list: &Vec<MapItem>, reader: &mut BufRe
     v
 }
 
+// TODO
 pub fn parse_annotation_set_item(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> Vec<Vec<u32>> {
     let item = find_type_in_map(map_list, 0x1003);
     if item.is_none() { panic!("No Annotation Set Item Found") }
@@ -485,19 +492,77 @@ pub fn parse_annotation_set_item(map_list: &Vec<MapItem>, reader: &mut BufReader
     offsets
 }
 
+// TODO
 pub fn parse_annotation_item(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) {
-    let item = find_type_in_map(map_list, 0x2004).unwrap();
+    // let item = find_type_in_map(map_list, 0x2004).unwrap();
+    // reader.seek(Start(item.offset.into())).unwrap();
+    //
+    // let mut v = Vec::with_capacity(item.size as usize);
+    // for _ in 0..item.size {
+    //     v.push()
+    // }
+}
+
+// TODO
+#[derive(Debug)]
+pub struct AnnotationItem {
+    pub visibility: Visibility,
+    pub annotation: EncodedAnnotation,
+}
+
+#[derive(Debug)]
+pub enum Visibility {
+    VisibilityBuild,
+    VisibilityRuntime,
+    VisibilitySystem,
+}
+
+#[derive(Debug)]
+pub struct EncodedAnnotation {
+    pub type_idx: u64,
+    pub elements: Vec<AnnotationElement>,
+}
+
+#[derive(Debug)]
+pub struct AnnotationElement {
+    pub name_idx: u64,
+    pub value: EncodedValue,
+}
+
+// TODO Untested
+pub fn parse_hiddenapi_class_data(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> Vec<HiddenApiClassData> {
+    let item = find_type_in_map(map_list, 0xF000);
+    if item.is_none() { return Vec::new(); }
+    let item = item.unwrap();
     reader.seek(Start(item.offset.into())).unwrap();
 
     let mut v = Vec::with_capacity(item.size as usize);
     for _ in 0..item.size {
-        v.push()
+        let size = read_u32(reader);
+        v.push(HiddenApiClassData {
+            size,
+            offsets: {
+                let mut v = Vec::with_capacity(size as usize);
+                for _ in 0..size {
+                    v.push(read_u32(reader));
+                }
+                v
+            },
+            flags: {
+                let mut v = Vec::with_capacity(size as usize);
+                for _ in 0..size {
+                    v.push(leb128::read::unsigned(reader).unwrap());
+                }
+                v
+            },
+        })
     }
+    v
 }
 
 
 #[derive(Debug)]
-enum EncodedValue {
+pub enum EncodedValue {
     Byte(u8),
     Short(i16),
     Char(u16),
@@ -741,22 +806,23 @@ pub struct ParameterAnnotation {
 }
 
 #[derive(Debug)]
-pub struct AnnotationItem {
-    pub visibility: u8,
-    pub annotation: EncodedAnnotation,
+pub struct HiddenApiClassData {
+    pub size: u32,
+    pub offsets: Vec<u32>,
+    pub flags: Vec<u64>,
 }
 
-#[derive(Debug)]
-pub struct EncodedAnnotation {
-    pub type_idx: u64,
-    pub elements: Vec<AnnotationElement>,
-}
 
-#[derive(Debug)]
-pub struct AnnotationElement {
-    pub name_idx: u64,
-    pub value: EncodedValue,
-}
+
+
+
+
+
+
+
+
+
+
 
 #[derive(Debug)]
 pub struct MapItem {
