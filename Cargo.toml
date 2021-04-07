@@ -8,3 +8,5 @@ edition = "2018"
 
 [dependencies]
 leb128 = "0.2.4"
+memmap = "0.7.0"
+scroll = "0.10.2"
