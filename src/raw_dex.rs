@@ -3,6 +3,8 @@ use std::fs::{File, read};
 use std::io::{BufReader, Read, Seek};
 use std::io::SeekFrom::{Current, Start};
 
+use scroll::{ctx, Endian, Pread};
+
 use crate::m_utf8;
 use crate::raw_dex::EncodedValue::Boolean;
 use crate::raw_dex::Visibility::{VisibilityBuild, VisibilityRuntime, VisibilitySystem};
@@ -496,7 +498,7 @@ pub fn parse_annotation_set_item(map_list: &Vec<MapItem>, reader: &mut BufReader
     v
 }
 
-pub fn parse_annotation_item(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) {
+pub fn parse_annotation_item(map_list: &Vec<MapItem>, reader: &mut BufReader<File>) -> Vec<AnnotationItem> {
     let item = find_type_in_map(map_list, 0x2004).unwrap();
     reader.seek(Start(item.offset.into())).unwrap();
 
@@ -513,25 +515,7 @@ pub fn parse_annotation_item(map_list: &Vec<MapItem>, reader: &mut BufReader<Fil
             annotation: EncodedAnnotation::from_reader(reader),
         });
     }
-}
-
-#[derive(Debug)]
-pub struct AnnotationItem {
-    pub visibility: Visibility,
-    pub annotation: EncodedAnnotation,
-}
-
-#[derive(Debug)]
-pub enum Visibility {
-    VisibilityBuild,
-    VisibilityRuntime,
-    VisibilitySystem,
-}
-
-#[derive(Debug)]
-pub struct EncodedAnnotation {
-    pub type_idx: u64,
-    pub elements: Vec<AnnotationElement>,
+    v
 }
 
 impl EncodedAnnotation {
@@ -551,12 +535,6 @@ impl EncodedAnnotation {
             },
         }
     }
-}
-
-#[derive(Debug)]
-pub struct AnnotationElement {
-    pub name_idx: u64,
-    pub value: EncodedValue,
 }
 
 // TODO Untested
@@ -711,10 +689,10 @@ impl DexHeader {
     }
 
     /// Check endian constant, returns true if it corresponds to the REVERSE_ENDIAN_CONSTANT
-    pub fn verify_endian(val: u32) -> bool {
+    pub fn verify_endian(val: u32) -> scroll::Endian {
         match val {
-            ENDIAN_CONSTANT => false,
-            REVERSE_ENDIAN_CONSTANT => true,
+            ENDIAN_CONSTANT => scroll::LE,
+            REVERSE_ENDIAN_CONSTANT => scroll::BE,
             _ => panic!("Bytes do not match valid constants")
         }
     }
@@ -891,21 +869,36 @@ pub struct ParameterAnnotation {
 }
 
 #[derive(Debug)]
+pub struct AnnotationItem {
+    pub visibility: Visibility,
+    pub annotation: EncodedAnnotation,
+}
+
+#[derive(Debug)]
+pub enum Visibility {
+    VisibilityBuild,
+    VisibilityRuntime,
+    VisibilitySystem,
+}
+
+#[derive(Debug)]
+pub struct EncodedAnnotation {
+    pub type_idx: u64,
+    pub elements: Vec<AnnotationElement>,
+}
+
+#[derive(Debug)]
+pub struct AnnotationElement {
+    pub name_idx: u64,
+    pub value: EncodedValue,
+}
+
+#[derive(Debug)]
 pub struct HiddenApiClassData {
     pub size: u32,
     pub offsets: Vec<u32>,
     pub flags: Vec<u64>,
 }
-
-
-
-
-
-
-
-
-
-
 
 
 
