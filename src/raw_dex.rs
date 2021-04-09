@@ -739,6 +739,59 @@ impl DexHeader {
     }
 }
 
+#[derive(Copy, Clone)]
+pub struct Context(pub(crate) Endian);
+
+impl<'a> ctx::TryFromCtx<'a, Context> for DexHeader {
+    type Error = scroll::Error;
+
+    fn try_from_ctx(src: &'a [u8], ctx: Context) -> Result<(Self, usize), Self::Error> {
+        let offset = &mut 0;
+        Ok((DexHeader {
+            magic: {
+                const MAGIC_SIZE: usize = 8;
+                let mut magic = [0u8; MAGIC_SIZE];
+                magic.clone_from_slice(&src[*offset..*offset + MAGIC_SIZE]);
+                *offset += MAGIC_SIZE;
+                DexHeader::verify_magic(&magic);
+                magic
+            },
+            checksum: src.gread_with(offset, ctx.0)?,
+            signature: {
+                const SIGNATURE_SIZE: usize = 20;
+                let mut signature = [0u8; SIGNATURE_SIZE];
+                signature.clone_from_slice(&src[*offset..*offset + SIGNATURE_SIZE]);
+                *offset += SIGNATURE_SIZE;
+                signature
+            },
+            file_size: src.gread_with(offset, ctx.0)?,
+            header_size: src.gread_with(offset, ctx.0)?,
+            endian_tag: {
+                let tag = src.gread_with(offset, ctx.0)?;
+                DexHeader::verify_endian(tag);
+                tag
+            },
+            link_size: src.gread_with(offset, ctx.0)?,
+            link_off: src.gread_with(offset, ctx.0)?,
+            map_off: src.gread_with(offset, ctx.0)?,
+            string_ids_size: src.gread_with(offset, ctx.0)?,
+            string_ids_off: src.gread_with(offset, ctx.0)?,
+            type_ids_size: src.gread_with(offset, ctx.0)?,
+            type_ids_off: src.gread_with(offset, ctx.0)?,
+            proto_ids_size: src.gread_with(offset, ctx.0)?,
+            proto_ids_off: src.gread_with(offset, ctx.0)?,
+            field_ids_size: src.gread_with(offset, ctx.0)?,
+            field_ids_off: src.gread_with(offset, ctx.0)?,
+            method_ids_size: src.gread_with(offset, ctx.0)?,
+            method_ids_off: src.gread_with(offset, ctx.0)?,
+            class_defs_size: src.gread_with(offset, ctx.0)?,
+            class_defs_off: src.gread_with(offset, ctx.0)?,
+            data_size: src.gread_with(offset, ctx.0)?,
+            data_off: src.gread_with(offset, ctx.0)?,
+        }, *offset))
+    }
+}
+
 
 struct StringData {
     utf16_size: u64,
