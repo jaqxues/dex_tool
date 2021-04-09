@@ -1,10 +1,11 @@
 use std::fs::File;
 use std::io::BufReader;
+use std::task::Context;
 
 use memmap::Mmap;
 use scroll::Pread;
 
-use crate::raw_dex::DexHeader;
+use crate::raw_dex::{DexHeader, MapItem, StringIds};
 
 mod raw_dex;
 mod m_utf8;
@@ -60,11 +61,23 @@ fn main() {
 fn use_mmap(f: &File) {
     let mmap = unsafe { Mmap::map(f).expect("Failed to use memmap on file") };
 
-    let mut ctx = raw_dex::Context { 0: scroll::LE };
+    let ctx = raw_dex::EndianContext { 0: DexHeader::get_endian(&mmap) };
     let dex_header: DexHeader = mmap.gread_with(&mut 0, ctx).unwrap();
-    ctx.0 = DexHeader::verify_endian(dex_header.endian_tag);
 
     let version = DexHeader::verify_magic(&dex_header.magic);
+
     assert!(SUPPORTED_DEX_VERSIONS.contains(&version),
             "Unsupported Dex Format Version ({})", version);
+
+    let map_list: Vec<MapItem> = mmap.pread_with(dex_header.map_off as usize, ctx).unwrap();
+
+    let ctx = raw_dex::TableContext {
+        endian: ctx.0,
+        header: &dex_header,
+        map: &map_list,
+    };
+
+    let string_ids: StringIds = mmap.pread_with(dex_header.string_ids_off as usize, ctx).unwrap();
+
+    println!("MapList: {:#X?}", string_ids);
 }

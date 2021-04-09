@@ -3,7 +3,9 @@ use std::fs::{File, read};
 use std::io::{BufReader, Read, Seek};
 use std::io::SeekFrom::{Current, Start};
 
+use memmap::Mmap;
 use scroll::{ctx, Endian, Pread};
+use scroll::ctx::TryFromCtx;
 
 use crate::m_utf8;
 use crate::raw_dex::EncodedValue::Boolean;
@@ -737,15 +739,27 @@ impl DexHeader {
             data_off: read_u32(reader),
         }
     }
+
+    pub fn get_endian(mmap: &Mmap) -> Endian {
+        const ENDIAN_OFFSET: usize = 0x28;
+        DexHeader::verify_endian(mmap.pread_with(ENDIAN_OFFSET, scroll::LE).unwrap())
+    }
 }
 
 #[derive(Copy, Clone)]
-pub struct Context(pub(crate) Endian);
+pub struct EndianContext(pub(crate) Endian);
 
-impl<'a> ctx::TryFromCtx<'a, Context> for DexHeader {
+#[derive(Copy, Clone)]
+pub struct TableContext<'a, 'b> {
+    pub endian: Endian,
+    pub header: &'a DexHeader,
+    pub map: &'b Vec<MapItem>,
+}
+
+impl<'a> ctx::TryFromCtx<'a, EndianContext> for DexHeader {
     type Error = scroll::Error;
 
-    fn try_from_ctx(src: &'a [u8], ctx: Context) -> Result<(Self, usize), Self::Error> {
+    fn try_from_ctx(src: &'a [u8], ctx: EndianContext) -> Result<(Self, usize), Self::Error> {
         let offset = &mut 0;
         Ok((DexHeader {
             magic: {
@@ -789,6 +803,44 @@ impl<'a> ctx::TryFromCtx<'a, Context> for DexHeader {
             data_size: src.gread_with(offset, ctx.0)?,
             data_off: src.gread_with(offset, ctx.0)?,
         }, *offset))
+    }
+}
+
+impl<'a> ctx::TryFromCtx<'a, EndianContext> for Vec<MapItem> {
+    type Error = scroll::Error;
+
+    fn try_from_ctx(src: &'a [u8], ctx: EndianContext) -> Result<(Self, usize), Self::Error> {
+        let mut offset = &mut 0;
+        let size: u32 = src.gread_with(offset, ctx.0)?;
+        let mut v = Vec::with_capacity(size as usize);
+        for _ in 0..size {
+            v.push(MapItem {
+                item_type: src.gread_with(offset, ctx.0)?,
+                size: {
+                    *offset += 2;
+                    src.gread_with(offset, ctx.0)?
+                },
+                offset: src.gread_with(offset, ctx.0)?,
+            })
+        }
+        Ok((v, *offset))
+    }
+}
+
+pub type StringIds = Vec<u32>;
+
+impl<'a> TryFromCtx<'a, TableContext<'_, '_>> for StringIds {
+    type Error = scroll::Error;
+
+    fn try_from_ctx(src: &'a [u8], ctx: TableContext) -> Result<(Self, usize), Self::Error> {
+        let size = ctx.header.string_ids_size;
+        let mut offset = &mut 0;
+        let mut v = Vec::with_capacity(size as usize);
+
+        for _ in 0..size {
+            v.push(src.gread_with(offset, ctx.endian)?)
+        }
+        Ok((v, *offset))
     }
 }
 
