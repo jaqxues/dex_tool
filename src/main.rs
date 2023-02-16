@@ -1,6 +1,5 @@
 use std::fs::File;
 use std::io::BufReader;
-use std::task::Context;
 
 use memmap::Mmap;
 use scroll::Pread;
@@ -23,6 +22,7 @@ fn main() {
     let f = File::open("mx_files/classes.dex").expect("Could not open file");
 
     use_mmap(&f);
+
     // let mut reader = BufReader::new(f);
     //
     // let dex_header = DexHeader::from_reader(&mut reader);
